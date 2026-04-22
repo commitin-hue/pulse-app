@@ -1,0 +1,24 @@
+{
+  "name": "Pulse — 1-Rep Backlog",
+  "short_name": "Pulse",
+  "description": "Vlad's daily rep system. One action, 5–15 min, pick one and move.",
+  "start_url": "./pulse.html",
+  "display": "standalone",
+  "background_color": "#0c0c0c",
+  "theme_color": "#0c0c0c",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
