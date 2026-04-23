@@ -849,8 +849,8 @@ function App() {
     setCustomTasks(ct);
     setDeletedIds(new Set(del));
 
-    // Morning briefing: fetch suggestions file
-    fetch('./pulse-suggestions.json')
+    // Morning briefing: fetch suggestions from GitHub Gist (always latest)
+    fetch('https://gist.githubusercontent.com/commitin-hue/a44d5b59aac3756ce47fe39359ba179f/raw/pulse-suggestions.json?t=' + Date.now())
       .then(r => r.ok ? r.json() : null)
       .catch(() => null)
       .then(data => {
