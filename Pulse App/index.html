@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Pulse</title>
+
+  <!-- PWA / iOS home screen -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pulse">
+  <meta name="theme-color" content="#0c0c0c">
+  <meta name="description" content="Vlad's 1-Rep Backlog — one action, 5–15 min, pick one and move.">
+
+  <link rel="apple-touch-icon" href="icon-512.png">
+  <link rel="icon" type="image/png" href="icon-512.png">
+  <link rel="manifest" href="manifest.json">
+
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html { height: -webkit-fill-available; }
+    body {
+      background: #0c0c0c;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior-y: contain;
+    }
+    ::-webkit-scrollbar { width: 0; height: 0; }
+    button { font-family: inherit; -webkit-appearance: none; }
+    :root {
+      --sat: env(safe-area-inset-top);
+      --sab: env(safe-area-inset-bottom);
+    }
+    .rep-row:active  { opacity: 0.7; }
+    .card-hdr:active { opacity: 0.7; }
+    .tab-btn:active  { opacity: 0.5; }
+    .fab:active      { transform: scale(0.9) !important; }
+    .chat-btn:active { transform: scale(0.88) !important; }
+
+    /* Chat drawer slide-up */
+    .drawer-enter { animation: slideUp 0.28s cubic-bezier(0.32,0.72,0,1) forwards; }
+    .drawer-exit  { animation: slideDown 0.22s ease-in forwards; }
+    @keyframes slideUp   { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    @keyframes slideDown { from { transform: translateY(0); }    to { transform: translateY(100%); } }
+
+    /* Morning briefing fade */
+    .briefing-in { animation: fadeIn 0.22s ease forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+
+    textarea { resize: none; font-family: inherit; }
+    input    { font-family: inherit; }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+</script>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ─── STORAGE KEYS ──────────────────────────────────────────────
+const STORAGE_KEY  = "vlad-backlog-v3";
+const STREAK_KEY   = "vlad-pulse-streak-v1";
+const CUSTOM_KEY   = "vlad-custom-tasks";
+const DELETED_KEY  = "vlad-deleted-ids";
+const SEEN_SUG_KEY = "vlad-seen-suggestions";
+
+// ─── DATA ──────────────────────────────────────────────────────
+const THIS_WEEK = {
+  weekOf: "Apr 15–21",
+  calendar: [
+    { day: "Wed Apr 15", event: "🎙️ Honda HR Interview",    time: "11:30am", id: "cal1" },
+    { day: "Thu Apr 16", event: "🏋️ Personal Training",     time: "6:00pm",  id: "cal2" },
+    { day: "Thu Apr 16", event: "📋 Weekly Backlog Hour",   time: "9:00pm",  id: "cal3" },
+    { day: "Sat Apr 18", event: "🎉 Fever (Anju's event)",  time: "11:00pm", id: "cal4" },
+    { day: "Wed Apr 22", event: "🏥 Doctor's Appointment",  time: "11:30am", id: "cal5" },
+  ],
+  urgent: [
+    { id: "tw1", action: "Send portfolio draft tonight (Gmail draft is ready)",   time: "10 min · tonight" },
+    { id: "tw2", action: "Book scuba session #4 — one session from certified",    time: "5 min · anywhere" },
+    { id: "tw3", action: "Confirm Bali hotel at The Prime Canggu",                time: "5 min · anywhere" },
+    { id: "tw4", action: "Check Bali eVOA requirements for Japan residents",      time: "5 min · commute"  },
+  ],
+  thisweek: [
+    { id: "tw5", action: "Apply to Rakuten UIUX or Logitech role (both in inbox)", time: "15 min · evening" },
+    { id: "tw6", action: "Call house maker or Panasonic toilet (daytime)",          time: "10 min · daytime" },
+    { id: "tw7", action: "Loans — fill in one section of paperwork",                time: "15 min · evening" },
+    { id: "tw8", action: "Message one recruiter on LinkedIn",                       time: "5 min · commute"  },
+  ],
+};
+
+const BACKLOG = {
+  active: {
+    label: "🔥 Active",
+    items: [
+      { id: "job-search", emoji: "💼", name: "Job Search", meta: "Resume done · recruiter outreach active", badgeColor: "#00E676", reps: [
+        { id: "js1", action: "Send portfolio to one target company",                 time: "10 min · tonight" },
+        { id: "js2", action: "Message one recruiter on LinkedIn",                    time: "5 min · commute"  },
+        { id: "js3", action: "Update one section of Google profile",                 time: "10 min · commute" },
+        { id: "js4", action: "Apply to Rakuten UIUX or Logitech role",               time: "15 min · evening" },
+        { id: "js5", action: "Add one measurable result to LinkedIn headline",       time: "5 min · anywhere" },
+      ]},
+      { id: "house", emoji: "🏠", name: "House Acquisition", meta: "Own 60% · acquiring remaining 40%", badgeColor: "#00E676", reps: [
+        { id: "h1", action: "Call the house maker about ownership transfer",         time: "10 min · daytime" },
+        { id: "h2", action: "Research one non-bank lender for bad credit in Japan",  time: "10 min · commute" },
+        { id: "h3", action: "Book a Shiho-shoshi consultation",                      time: "10 min · daytime" },
+        { id: "h4", action: "Call Toyota Finance about loan options",                time: "10 min · daytime" },
+        { id: "h5", action: "Write 3 questions for Shiho-shoshi meeting",            time: "5 min · anywhere" },
+      ]},
+      { id: "rnb", emoji: "🎪", name: "RNB After Dark", meta: "Japan's biggest R&B party · deck done", badgeColor: "#FF6D00", reps: [
+        { id: "r1", action: "Find one dream sponsor contact on LinkedIn",                time: "5 min · commute"  },
+        { id: "r2", action: "Send sponsorship deck to Don Julio / Red Bull / Sony",     time: "10 min · evening" },
+        { id: "r3", action: "Post one RNB After Dark piece of content to IG",           time: "10 min · evening" },
+      ]},
+      { id: "ticketing", emoji: "🎟️", name: "Ticketing Platform", meta: "Next.js / Postgres · Japan-focused UX", badgeColor: "#FF6D00", reps: [
+        { id: "t1", action: "Run the Claude Code scaffold command — it's ready",     time: "10 min · at home" },
+        { id: "t2", action: "Write one user story for the ticket purchase flow",     time: "10 min · commute" },
+        { id: "t3", action: "Screenshot 3 competitor UIs for reference",             time: "5 min · commute"  },
+      ]},
+      { id: "polymarket", emoji: "🤖", name: "Polymarket Bot", meta: "AI-assisted · vibe-coding approach", badgeColor: "#FF6D00", reps: [
+        { id: "p1", action: "Create Polymarket account and fund with $50",           time: "15 min · at home" },
+        { id: "p2", action: "Install Claude Code",                                   time: "10 min · at home" },
+        { id: "p3", action: "Browse Polymarket and pick one market to paper-trade",  time: "10 min · commute" },
+      ]},
+    ],
+  },
+  creative: {
+    label: "🎨 Creative",
+    items: [
+      { id: "food", emoji: "🍜", name: "Food Content Creator", meta: "Black diaspora × Tokyo food · TikTok/IG/YT", badgeColor: "#E040FB", reps: [
+        { id: "f1", action: "Write 5 name options for your food brand",                       time: "10 min · commute"   },
+        { id: "f2", action: "Follow 5 Tokyo food creators to study their format",             time: "5 min · commute"    },
+        { id: "f3", action: "Film a 30-sec reaction next time you eat somewhere interesting", time: "5 min · eating out" },
+        { id: "f4", action: "Write your 15-second brand intro hook",                          time: "10 min · commute"   },
+        { id: "f5", action: "Pick one Tokyo neighborhood to 'walk and eat' this weekend",     time: "5 min · anywhere"   },
+      ]},
+      { id: "dj", emoji: "🎧", name: "DJ / Asahi Brand", meta: "Interactive set · audience mood voting", badgeColor: "#E040FB", reps: [
+        { id: "dj1", action: "Write 3 sentences defining the Asahi brand identity", time: "10 min · commute" },
+        { id: "dj2", action: "Sketch the mood voting concept on paper",             time: "10 min · anywhere"},
+        { id: "dj3", action: "Post one DJ-related photo/clip to IG",               time: "5 min · evening"  },
+      ]},
+      { id: "cebu", emoji: "🎬", name: "Cebu Video", meta: "Travel content · incomplete", badgeColor: "#FF3D3D", reps: [
+        { id: "c1", action: "Open the raw Cebu footage — just watch it, nothing else", time: "10 min · evening" },
+        { id: "c2", action: "Select 3 best clips and star them",                        time: "10 min · evening" },
+        { id: "c3", action: "Write one sentence story arc for the video",               time: "5 min · commute"  },
+      ]},
+      { id: "poem", emoji: "✍️", name: "Poem", meta: "In progress · incomplete", badgeColor: "#FF3D3D", reps: [
+        { id: "po1", action: "Open the poem draft and read what's already there", time: "3 min · anywhere"    },
+        { id: "po2", action: "Write just one new line",                            time: "5 min · commute"    },
+        { id: "po3", action: "Edit just the first stanza until it feels right",   time: "10 min · quiet time" },
+      ]},
+      { id: "letter", emoji: "💌", name: "Marriage Letter Book", meta: "One page per year · Kendrick refs", badgeColor: "#E040FB", reps: [
+        { id: "ml1", action: "Write one memory from year one of your marriage",  time: "10 min · quiet evening" },
+        { id: "ml2", action: "Pick one Kendrick lyric that maps to your story",  time: "10 min · commute"       },
+      ]},
+      { id: "felix", emoji: "🐾", name: "FelixIsBougie", meta: "Pet content brand · Felix the Sheltie", badgeColor: "#E040FB", reps: [
+        { id: "fb1", action: "Take one styled photo of Felix on today's walk",            time: "5 min · walk"    },
+        { id: "fb2", action: "Post one Felix moment to IG/TikTok with a bougie caption", time: "5 min · evening" },
+      ]},
+      { id: "monkey", emoji: "🐒", name: "Punch Monkey Toy", meta: "Limited edition plush · collectible drops", badgeColor: "#E040FB", reps: [
+        { id: "pm1", action: "Google one Alibaba supplier for custom plush toys", time: "10 min · commute" },
+        { id: "pm2", action: "Sketch the Punch Monkey character — rough is fine", time: "10 min · anywhere"},
+      ]},
+    ],
+  },
+  todo: {
+    label: "✅ To-Do",
+    items: [
+      { id: "loans", emoji: "💰", name: "Loans", meta: "High priority · overdue since Feb 6", badgeColor: "#FF3D3D", reps: [
+        { id: "lo1", action: "Find and open the loan documents",          time: "5 min · at home"  },
+        { id: "lo2", action: "Fill in one section of the loan paperwork", time: "15 min · at home" },
+      ]},
+      { id: "paris", emoji: "✈️", name: "Book Paris Flight Home", meta: "Return flight still unbooked", badgeColor: "#FFD600", reps: [
+        { id: "pa1", action: "Check Paris → Tokyo dates on Google Flights", time: "10 min · commute" },
+        { id: "pa2", action: "Book the flight",                              time: "10 min · at home" },
+      ]},
+      { id: "house-calls", emoji: "🚽", name: "House Calls", meta: "Panasonic toilet · house maker", badgeColor: "#FFD600", reps: [
+        { id: "hc1", action: "Call Panasonic toilet support", time: "10 min · daytime" },
+        { id: "hc2", action: "Call the house maker",          time: "10 min · daytime" },
+      ]},
+      { id: "costco", emoji: "🛍️", name: "Costco Run", meta: "12 items on list", badgeColor: "#FFD600", reps: [
+        { id: "co1", action: "Beef broth, Barata cheese, Scallion, Pumpkin",                time: "At Costco" },
+        { id: "co2", action: "Worcestershire, Fish sauce, Rice wine vinegar, Tomato paste", time: "At Costco" },
+        { id: "co3", action: "Cama oil, Cayenne pepper, Tortilla chips, Dog food",          time: "At Costco" },
+      ]},
+      { id: "bali", emoji: "🌴", name: "Bali Trip Prep", meta: "The Prime Canggu · late April", badgeColor: "#FFD600", reps: [
+        { id: "ba1", action: "Confirm hotel reservation at The Prime Canggu",       time: "5 min · anywhere" },
+        { id: "ba2", action: "Check Bali eVOA requirements for Japan residents",    time: "5 min · commute"  },
+        { id: "ba3", action: "Pack one category: toiletries / clothes / chargers",  time: "15 min · at home" },
+      ]},
+    ],
+  },
+  life: {
+    label: "🌱 Life",
+    items: [
+      { id: "scuba", emoji: "🤿", name: "Scuba License", meta: "3 of 4 done · one session left", badgeColor: "#00E676", reps: [
+        { id: "sc1", action: "Book your 4th and final scuba session",     time: "5 min · anywhere" },
+        { id: "sc2", action: "Review session 3 notes before final class", time: "10 min · commute" },
+        { id: "sc3", action: "Look up one dive spot in Bali",             time: "5 min · commute"  },
+      ]},
+      { id: "computer", emoji: "💻", name: "New Computer", meta: "Saving up · research phase", badgeColor: "#448AFF", reps: [
+        { id: "cp1", action: "Decide: MacBook Pro or desktop — write pros/cons", time: "10 min · commute" },
+        { id: "cp2", action: "Check current price on your target model",          time: "5 min · anywhere" },
+        { id: "cp3", action: "Set a monthly savings target",                      time: "5 min · anywhere" },
+      ]},
+      { id: "rims", emoji: "🚗", name: "New RIMs", meta: "E200 Cabriolet · saving up", badgeColor: "#448AFF", reps: [
+        { id: "ri1", action: "Browse one RIM style that fits the E200 — screenshot it", time: "10 min · commute" },
+        { id: "ri2", action: "Get a rough quote for preferred RIM size and style",       time: "10 min · anywhere"},
+        { id: "ri3", action: "Set a monthly savings target for the RIMs",               time: "5 min · anywhere" },
+      ]},
+      { id: "sleep", emoji: "😴", name: "Sleep Debt to Zero", meta: "Aim for earlier bedtime consistently", badgeColor: "#448AFF", reps: [
+        { id: "sl1", action: "Tonight: be in bed by 12:00am",                           time: "Ongoing · tonight"  },
+        { id: "sl2", action: "Set an 11:45pm 'wind down now' phone alarm",              time: "1 min · now"        },
+        { id: "sl3", action: "Identify what keeps you up past midnight — cut 15 min",  time: "5 min · reflection"  },
+      ]},
+      { id: "hotsauce", emoji: "🌶️", name: "Hot Sauce Party", meta: "Your own music event · details TBD", badgeColor: "#FF6D00", reps: [
+        { id: "hs1", action: "Write the concept in 3 sentences — what is Hot Sauce?",  time: "5 min · commute" },
+        { id: "hs2", action: "Pick a rough target date or season for the first event", time: "5 min · anywhere"},
+        { id: "hs3", action: "Think of one Tokyo venue that fits the vibe",            time: "5 min · commute" },
+      ]},
+      { id: "marathon", emoji: "🏃", name: "Half Marathon", meta: "Long-term fitness target", badgeColor: "#448AFF", reps: [
+        { id: "ma1", action: "Run 15 min on your next Felix morning walk", time: "15 min · morning" },
+        { id: "ma2", action: "Look up one half marathon race in Tokyo",    time: "5 min · commute"  },
+      ]},
+      { id: "travel", emoji: "🌍", name: "5-Year Travel Plan", meta: "Bucket list destinations", badgeColor: "#448AFF", reps: [
+        { id: "tr1", action: "Add one destination with a rough year",                time: "5 min · commute"  },
+        { id: "tr2", action: "Research one thing about Haiti for a roots trip",      time: "10 min · commute" },
+      ]},
+      { id: "trading", emoji: "📊", name: "Finance & Trading", meta: "IBKR · Mon–Wed 10:30pm sessions", badgeColor: "#448AFF", reps: [
+        { id: "fi1", action: "Read Argentum Wealth April market insights email", time: "10 min · commute" },
+        { id: "fi2", action: "Sign up for IBKR free ETF Research newsletter",   time: "5 min · anywhere" },
+      ]},
+    ],
+  },
+};
+
+const BUILTIN_REPS  = ["active","creative","todo","life"].flatMap(t => BACKLOG[t].items.flatMap(i => i.reps));
+const WEEK_REPS     = [...THIS_WEEK.urgent, ...THIS_WEEK.thisweek];
+
+const S = {
+  bg: "#0c0c0c", surface: "#131313", border: "#1e1e1e",
+  text: "#F0EDE8", muted: "#555", sub: "#2e2e2e",
+  yellow: "#FFD600", green: "#00E676", red: "#FF3D3D",
+  blue: "#448AFF", orange: "#FF6D00", purple: "#E040FB",
+};
+
+// ─── LOCAL STORAGE ─────────────────────────────────────────────
+const ls = {
+  get: (k, def) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : def; } catch { return def; } },
+  set: (k, v)   => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+// ─── STREAK ────────────────────────────────────────────────────
+const getTodayStr = () => new Date().toISOString().split('T')[0];
+
+function calcStreak(dates) {
+  if (!dates?.length) return 0;
+  const u = [...new Set(dates)].sort().reverse();
+  const today = getTodayStr();
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  if (u[0] !== today && u[0] !== yesterday) return 0;
+  let streak = 1;
+  for (let i = 1; i < u.length; i++) {
+    const d = new Date(u[0]); d.setDate(d.getDate() - i);
+    if (u[i] === d.toISOString().split('T')[0]) streak++; else break;
+  }
+  return streak;
+}
+
+// ─── NATURAL LANGUAGE PARSER ───────────────────────────────────
+const CONTEXTS = ['commute','at home','daytime','anywhere','evening','tonight','morning','quiet time','eating out','walk'];
+const CATEGORIES = ['active','creative','todo','life'];
+
+function parseChat(raw) {
+  const text = raw.trim();
+  const lower = text.toLowerCase();
+
+  // DELETE / REMOVE
+  if (/^(remove|delete|scratch|kill|done with|drop)\b/i.test(text)) {
+    const query = text.replace(/^(remove|delete|scratch|kill|done with|drop)\s+/i, '').trim();
+    return { type: 'delete', query };
+  }
+
+  // EXPLICIT ADD
+  const addMatch = text.match(/^(?:add|new|\+|create|remind(?:er)? (?:me )?(?:to )?)\s*:?\s*/i);
+  const body = addMatch ? text.slice(addMatch[0].length).trim() : text;
+  return buildAdd(body);
+}
+
+function buildAdd(body) {
+  const lower = body.toLowerCase();
+  const timeMatch = body.match(/(\d+)\s*min(?:utes?)?/i);
+  const mins = timeMatch ? timeMatch[1] : '10';
+  const ctx = CONTEXTS.find(c => lower.includes(c)) || 'anywhere';
+  const catMatch = lower.match(/\bto\s+(active|creative|todo|life)\b/) ||
+                   lower.match(/\b(active|creative|todo|life)\b/);
+  const category = catMatch ? catMatch[1] : 'todo';
+
+  let action = body
+    .replace(/\d+\s*min(?:utes?)?/ig, '')
+    .replace(/\bto\s+(active|creative|todo|life)\b/ig, '')
+    .replace(new RegExp(`\\b(${CONTEXTS.join('|')})\\b`, 'ig'), '')
+    .replace(/[·\-–]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+  if (!action) action = body.trim();
+  action = action.charAt(0).toUpperCase() + action.slice(1).replace(/\.$/, '');
+
+  return { type: 'add', action, time: `${mins} min · ${ctx}`, category };
+}
+
+// ─── DAILY RADAR PICKS ─────────────────────────────────────────
+function getDailyPicks(checked, customTasks, deletedIds) {
+  const seed = getTodayStr().replace(/-/g,'').split('').reduce((a,c,i)=>a+c.charCodeAt(0)*(i+1),0);
+  const pick  = (pool, off) => pool.length ? pool[Math.abs(seed*(off+7)*1234567) % pool.length] : null;
+
+  const visible = (r) => !deletedIds.has(r.id) && !checked[r.id];
+
+  const urgentUndone = THIS_WEEK.urgent.filter(visible);
+  const redUndone    = ["active","creative","todo","life"].flatMap(t =>
+    BACKLOG[t].items.filter(i => i.badgeColor === "#FF3D3D").flatMap(i => i.reps)
+  ).filter(visible);
+  const orangeUndone = ["active","creative","todo","life"].flatMap(t =>
+    BACKLOG[t].items.filter(i => i.badgeColor === "#FF6D00").flatMap(i => i.reps)
+  ).filter(visible);
+  const customUndone = customTasks.filter(t => !checked[t.id] && !deletedIds.has(t.id));
+  const restUndone   = BUILTIN_REPS.filter(r =>
+    visible(r) &&
+    !redUndone.find(x => x.id === r.id) &&
+    !orangeUndone.find(x => x.id === r.id)
+  );
+
+  const picks = []; const used = new Set();
+  const add = (pool, off) => {
+    if (picks.length >= 5 || !pool.length) return;
+    const p = pick(pool, off);
+    if (p && !used.has(p.id)) { picks.push(p); used.add(p.id); }
+  };
+
+  add(urgentUndone, 0); add(urgentUndone, 1);
+  add(redUndone, 2);
+  if (customUndone.length) add(customUndone, 3);
+  add(orangeUndone, 4);
+  for (let i = 5; picks.length < 5; i++) { add(restUndone, i); if (i > 30) break; }
+  return picks.filter(Boolean);
+}
+
+// ─── COMPONENTS ────────────────────────────────────────────────
+function Checkbox({ isDone }) {
+  return (
+    <div style={{
+      width: 17, height: 17, borderRadius: 4, flexShrink: 0, marginTop: 1,
+      border: isDone ? "none" : `1.5px solid ${S.sub}`,
+      background: isDone ? S.green : "transparent",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      {isDone && <span style={{ color: "#000", fontSize: 9, fontWeight: 700 }}>✓</span>}
+    </div>
+  );
+}
+
+function RepRow({ rep, isDone, onToggle, onFocus, focusId, onDelete }) {
+  const isActive = focusId === rep.id;
+  return (
+    <div className="rep-row" style={{
+      display: "flex", alignItems: "flex-start", gap: 10,
+      padding: "10px 12px", marginBottom: 6,
+      background: isActive ? "#1c1700" : isDone ? "#0a0a0a" : S.surface,
+      border: `1px solid ${isActive ? S.yellow+"55" : isDone ? "#181818" : S.border}`,
+      borderRadius: 9, opacity: isDone ? 0.45 : 1, transition: "all 0.15s",
+    }}>
+      <div onClick={(e) => onToggle(e, rep.id)} style={{ cursor: "pointer", paddingTop: 1 }}>
+        <Checkbox isDone={isDone} />
+      </div>
+      <div style={{ flex: 1, cursor: "pointer" }} onClick={(e) => onToggle(e, rep.id)}>
+        <div style={{ fontSize: 12, color: isDone ? "#3a3a3a" : S.text, lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none" }}>
+          {rep.action}
+        </div>
+        <div style={{ fontSize: 9, color: "#3a3a3a", marginTop: 3 }}>⏱ {rep.time}</div>
+      </div>
+      <div style={{ display: "flex", gap: 5 }}>
+        {!isDone && (
+          <button onClick={(e) => { e.stopPropagation(); onFocus(rep); }} style={{
+            background: isActive ? S.yellow : "transparent",
+            border: `1px solid ${isActive ? S.yellow : "#2a2a2a"}`,
+            color: isActive ? "#000" : "#444",
+            borderRadius: 5, padding: "3px 7px", fontSize: 9, cursor: "pointer", transition: "all 0.15s",
+          }}>{isActive ? "▶" : "⏱"}</button>
+        )}
+        {onDelete && (
+          <button onClick={(e) => { e.stopPropagation(); onDelete(rep.id); }} style={{
+            background: "transparent", border: `1px solid #2a2a2a`,
+            color: "#444", borderRadius: 5, padding: "3px 7px", fontSize: 9, cursor: "pointer",
+          }}>✕</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ color, text }) {
+  return (
+    <div style={{ fontSize: 8, fontFamily: "Unbounded, sans-serif", letterSpacing: "0.17em", color, textTransform: "uppercase", margin: "14px 0 8px 2px" }}>
+      {text}
+    </div>
+  );
+}
+
+// ─── FOCUS BAR ─────────────────────────────────────────────────
+function FocusBar({ task, timeLeft, running, onToggle, onStop }) {
+  const mins = Math.floor(timeLeft / 60);
+  const secs = timeLeft % 60;
+  const pct  = ((25*60 - timeLeft) / (25*60)) * 100;
+  return (
+    <div style={{
+      position: "fixed", top: 0, left: "50%", transform: "translateX(-50%)",
+      width: "100%", maxWidth: 500, background: "#181200",
+      borderBottom: `2px solid ${timeLeft < 60 ? S.red : S.yellow}`, zIndex: 200,
+      paddingTop: "calc(8px + env(safe-area-inset-top))", paddingBottom: 8, paddingLeft: 14, paddingRight: 14,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={onToggle} style={{ background: S.yellow, border: "none", color: "#000", borderRadius: 6, padding: "5px 11px", fontSize: 13, cursor: "pointer", fontWeight: 700 }}>
+          {running ? "⏸" : "▶"}
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 4 }}>{task.action}</div>
+          <div style={{ height: 3, background: "#2e2e2e", borderRadius: 2 }}>
+            <div style={{ height: "100%", width: `${pct}%`, background: timeLeft < 60 ? S.red : S.yellow, borderRadius: 2, transition: "width 1s linear" }} />
+          </div>
+        </div>
+        <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 17, fontWeight: 700, color: timeLeft < 60 ? S.red : S.yellow, flexShrink: 0 }}>
+          {mins}:{String(secs).padStart(2,"0")}
+        </div>
+        <button onClick={onStop} style={{ background: "none", border: "none", color: S.muted, fontSize: 18, cursor: "pointer", padding: "0 2px" }}>✕</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── CHAT DRAWER ───────────────────────────────────────────────
+function ChatDrawer({ open, onClose, customTasks, setCustomTasks, deletedIds, setDeletedIds, checked }) {
+  const [input,      setInput]      = useState('');
+  const [history,    setHistory]    = useState([]);
+  const [bottomOff,  setBottomOff]  = useState(0);
+  const inputRef  = useRef(null);
+  const histRef   = useRef(null);
+
+  // Lift drawer above iOS keyboard using visualViewport API
+  useEffect(() => {
+    if (!open) { setBottomOff(0); return; }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const kbH = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setBottomOff(kbH);
+    };
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    update();
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update); };
+  }, [open]);
+
+  useEffect(() => {
+    if (histRef.current) histRef.current.scrollTop = histRef.current.scrollHeight;
+  }, [history]);
+
+  const findAndDelete = (query) => {
+    const q = query.toLowerCase();
+    const cm = customTasks.find(t => t.action.toLowerCase().includes(q));
+    if (cm) {
+      const next = customTasks.filter(t => t.id !== cm.id);
+      setCustomTasks(next); ls.set(CUSTOM_KEY, next);
+      return { found: true, label: cm.action };
+    }
+    const bm = BUILTIN_REPS.concat(WEEK_REPS).find(r => r.action.toLowerCase().includes(q));
+    if (bm) {
+      const next = new Set([...deletedIds, bm.id]);
+      setDeletedIds(next); ls.set(DELETED_KEY, [...next]);
+      return { found: true, label: bm.action };
+    }
+    const items = ["active","creative","todo","life"].flatMap(t => BACKLOG[t].items);
+    const im = items.find(i => i.name.toLowerCase().includes(q));
+    if (im) {
+      const ids = im.reps.map(r => r.id);
+      const next = new Set([...deletedIds, ...ids]);
+      setDeletedIds(next); ls.set(DELETED_KEY, [...next]);
+      return { found: true, label: `${im.name} (${ids.length} tasks)` };
+    }
+    return { found: false };
+  };
+
+  const submit = () => {
+    const text = input.trim();
+    if (!text) return;
+    setHistory(h => [...h, { role: 'user', text }]);
+    setInput('');
+    const parsed = parseChat(text);
+    let reply = '';
+    if (parsed.type === 'add') {
+      const newTask = { id: `custom-${Date.now()}`, action: parsed.action, time: parsed.time, category: parsed.category, created: getTodayStr() };
+      const next = [...customTasks, newTask];
+      setCustomTasks(next); ls.set(CUSTOM_KEY, next);
+      reply = `✓ Added to ${parsed.category}:\n"${parsed.action}"\n${parsed.time}`;
+    } else if (parsed.type === 'delete') {
+      const result = findAndDelete(parsed.query);
+      reply = result.found ? `✓ Removed: "${result.label}"` : `Couldn't find "${parsed.query}" — try part of the task name`;
+    } else {
+      reply = `Try:\n"add dentist · 10 min · daytime"\n"remove scuba"`;
+    }
+    setTimeout(() => setHistory(h => [...h, { role: 'bot', text: reply }]), 150);
+  };
+
+  const onKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } };
+
+  if (!open) return null;
+
+  const examples = [
+    "add book dentist · 10 min · daytime",
+    "add reply to Honda HR · tonight",
+    "remove scuba",
+    "delete loans",
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 300 }} />
+
+      {/* Drawer — rises above keyboard via bottomOff */}
+      <div className="drawer-enter" style={{
+        position: "fixed",
+        bottom: bottomOff,
+        left: "50%", transform: "translateX(-50%)",
+        width: "100%", maxWidth: 500,
+        background: "#161616",
+        borderRadius: "20px 20px 0 0",
+        zIndex: 310,
+        paddingBottom: bottomOff > 0 ? 6 : "env(safe-area-inset-bottom)",
+        maxHeight: "60vh",
+        display: "flex", flexDirection: "column",
+        transition: "bottom 0.15s ease-out",
+        boxShadow: "0 -8px 40px rgba(0,0,0,0.6)",
+      }}>
+        {/* Handle */}
+        <div style={{ padding: "10px 16px 8px", borderBottom: `1px solid #222` }}>
+          <div style={{ width: 40, height: 4, borderRadius: 2, background: "#333", margin: "0 auto 10px" }} />
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 10, fontWeight: 700, color: S.yellow, letterSpacing: "0.1em" }}>TASK CHAT</div>
+              <div style={{ fontSize: 10, color: "#666", marginTop: 2 }}>Type to add or remove tasks</div>
+            </div>
+            <button onClick={onClose} style={{ background: "#222", border: "none", color: "#666", borderRadius: 8, width: 30, height: 30, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+          </div>
+        </div>
+
+        {/* History */}
+        <div ref={histRef} style={{ flex: 1, overflowY: "auto", padding: "10px 14px", display: "flex", flexDirection: "column", gap: 8, minHeight: 0 }}>
+          {history.length === 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 10, color: "#555", marginBottom: 2 }}>Tap an example or type below:</div>
+              {examples.map((ex, i) => (
+                <div key={i} onClick={() => { setInput(ex); inputRef.current?.focus(); }} style={{
+                  fontSize: 12, color: "#888", background: "#1e1e1e",
+                  border: `1px solid #2a2a2a`, borderRadius: 10, padding: "9px 12px",
+                  cursor: "pointer", lineHeight: 1.4,
+                }}>{ex}</div>
+              ))}
+            </div>
+          )}
+          {history.map((msg, i) => (
+            <div key={i} style={{
+              alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
+              background: msg.role === 'user' ? S.yellow : "#1e1e1e",
+              color: msg.role === 'user' ? '#000' : S.text,
+              border: `1px solid ${msg.role === 'user' ? S.yellow : '#2a2a2a'}`,
+              borderRadius: msg.role === 'user' ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+              padding: "9px 13px", fontSize: 13, maxWidth: "88%",
+              whiteSpace: "pre-wrap", lineHeight: 1.5,
+            }}>{msg.text}</div>
+          ))}
+        </div>
+
+        {/* Input bar — always visible, high contrast */}
+        <div style={{
+          padding: "10px 12px",
+          borderTop: `1px solid #242424`,
+          background: "#1a1a1a",
+          display: "flex", gap: 8, alignItems: "center",
+        }}>
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="text"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={onKey}
+            placeholder="add dentist 10 min daytime…"
+            style={{
+              flex: 1,
+              background: "#242424",
+              border: `1.5px solid #383838`,
+              borderRadius: 12,
+              padding: "13px 14px",
+              fontSize: 15,
+              color: "#F0EDE8",
+              outline: "none",
+              minWidth: 0,
+              // Prevent iOS zoom on focus (font-size must be ≥16px to avoid it,
+              // but we compensate with transform so visual size stays 15px)
+              WebkitAppearance: "none",
+            }}
+          />
+          <button
+            onClick={submit}
+            style={{
+              background: S.yellow,
+              border: "none",
+              color: "#000",
+              borderRadius: 12,
+              width: 48, height: 48,
+              fontSize: 20, fontWeight: 900,
+              cursor: "pointer",
+              flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >↑</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── MORNING BRIEFING ──────────────────────────────────────────
+function MorningBriefing({ suggestions, onAccept, onDismissAll }) {
+  const [pending, setPending] = useState(suggestions);
+
+  const accept = (s) => {
+    onAccept(s);
+    setPending(p => p.filter(x => x.id !== s.id));
+  };
+  const dismiss = (s) => setPending(p => p.filter(x => x.id !== s.id));
+
+  if (pending.length === 0) { onDismissAll(); return null; }
+
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 400 }} />
+      <div className="briefing-in" style={{
+        position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)",
+        width: "calc(100% - 32px)", maxWidth: 440,
+        background: "#111", border: `1px solid ${S.border}`,
+        borderRadius: 18, zIndex: 410, overflow: "hidden",
+        maxHeight: "80vh", display: "flex", flexDirection: "column",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "18px 18px 14px", borderBottom: `1px solid ${S.border}` }}>
+          <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 8, letterSpacing: "0.18em", color: S.muted, textTransform: "uppercase", marginBottom: 6 }}>
+            ☀️ Morning Check · {new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+          </div>
+          <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 16, fontWeight: 900 }}>
+            {pending.length} thing{pending.length > 1 ? 's' : ''} on your radar
+          </div>
+          <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>From your Gmail + Calendar scan</div>
+        </div>
+
+        {/* Suggestions */}
+        <div style={{ overflowY: "auto", padding: "12px 14px", flex: 1 }}>
+          {pending.map(s => (
+            <div key={s.id} style={{ marginBottom: 10, background: S.surface, border: `1px solid ${S.border}`, borderRadius: 11, padding: "12px 14px" }}>
+              <div style={{ fontSize: 12, color: S.text, lineHeight: 1.4, marginBottom: 4 }}>{s.action}</div>
+              <div style={{ fontSize: 9, color: S.muted }}>{s.source} · {s.reason}</div>
+              <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <button onClick={() => accept(s)} style={{
+                  flex: 1, background: S.yellow, border: "none", color: "#000",
+                  borderRadius: 8, padding: "7px", fontFamily: "Unbounded, sans-serif",
+                  fontSize: 9, fontWeight: 700, cursor: "pointer",
+                }}>+ ADD TO RADAR</button>
+                <button onClick={() => dismiss(s)} style={{
+                  flex: 1, background: "transparent", border: `1px solid ${S.border}`,
+                  color: S.muted, borderRadius: 8, padding: "7px", fontSize: 11, cursor: "pointer",
+                }}>Skip</button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "12px 14px", borderTop: `1px solid ${S.border}` }}>
+          <button onClick={onDismissAll} style={{
+            width: "100%", background: "transparent", border: `1px solid ${S.border}`,
+            color: S.muted, borderRadius: 10, padding: "10px", fontSize: 11, cursor: "pointer",
+          }}>Dismiss all</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── RADAR TAB ─────────────────────────────────────────────────
+function RadarTab({ checked, onToggle, streak, focusId, onFocus, customTasks, deletedIds, onDeleteCustom }) {
+  const picks = getDailyPicks(checked, customTasks, deletedIds);
+  const isCustom = (id) => customTasks.some(t => t.id === id);
+  const dateStr = new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+
+  return (
+    <div style={{ padding: "14px 14px 0" }}>
+      {/* Streak */}
+      <div style={{
+        background: streak > 0 ? "#1a1200" : S.surface,
+        border: `1px solid ${streak > 0 ? S.yellow+"45" : S.border}`,
+        borderRadius: 12, padding: "14px 16px", marginBottom: 16,
+        display: "flex", alignItems: "center", gap: 14,
+      }}>
+        <div style={{ fontSize: 34, lineHeight: 1 }}>{streak > 0 ? "🔥" : "⚡"}</div>
+        <div>
+          <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 18, fontWeight: 900, color: streak > 0 ? S.yellow : S.muted }}>
+            {streak > 0 ? `${streak} DAY STREAK` : "START YOUR STREAK"}
+          </div>
+          <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>
+            {streak > 0 ? "Keep going — complete a task daily" : "Check off a task today to begin"}
+          </div>
+        </div>
+      </div>
+
+      <SectionLabel color={S.yellow} text={`📡 Today's Radar · ${dateStr}`} />
+      <div style={{ fontSize: 10, color: S.muted, marginBottom: 12 }}>Fresh picks daily · prioritised by urgency</div>
+
+      {picks.map(rep => (
+        <RepRow key={rep.id} rep={rep} isDone={!!checked[rep.id]} onToggle={onToggle}
+          onFocus={onFocus} focusId={focusId}
+          onDelete={isCustom(rep.id) ? () => onDeleteCustom(rep.id) : null}
+        />
+      ))}
+
+      {picks.every(r => checked[r.id]) && picks.length > 0 && (
+        <div style={{ textAlign: "center", padding: "24px 0 8px" }}>
+          <div style={{ fontSize: 28 }}>🎯</div>
+          <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 11, marginTop: 8, color: S.green, letterSpacing: "0.1em" }}>RADAR CLEAR</div>
+          <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>Check the other tabs for more</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── BACKLOG CARD ──────────────────────────────────────────────
+function BacklogCard({ item, checked, open, onToggle, onCard, focusId, onFocus, deletedIds }) {
+  const isOpen = !!open[item.id];
+  const visReps = item.reps.filter(r => !deletedIds.has(r.id));
+  const done  = visReps.filter(r => checked[r.id]).length;
+  const total = visReps.length;
+  if (total === 0) return null;
+
+  return (
+    <div style={{ margin: "0 14px 10px", background: S.surface, border: `1px solid ${S.border}`, borderRadius: 11, overflow: "hidden", opacity: done === total ? 0.5 : 1, transition: "opacity 0.25s" }}>
+      <div className="card-hdr" onClick={() => onCard(item.id)} style={{ padding: "12px 13px", display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+        <div style={{ fontSize: 20, width: 30, textAlign: "center", flexShrink: 0 }}>{item.emoji}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 10, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div>
+          <div style={{ fontSize: 10, color: S.muted, marginTop: 2 }}>{item.meta}</div>
+        </div>
+        <div style={{ fontSize: 9, fontFamily: "Unbounded, sans-serif", padding: "3px 8px", borderRadius: 20, background: item.badgeColor+"18", color: item.badgeColor, border: `1px solid ${item.badgeColor}30`, flexShrink: 0, fontWeight: 700 }}>{done}/{total}</div>
+        <div style={{ color: S.muted, fontSize: 13, transition: "transform 0.2s", transform: isOpen ? "rotate(90deg)" : "none", flexShrink: 0, marginLeft: 2 }}>›</div>
+      </div>
+      <div style={{ padding: "0 13px 10px" }}>
+        <div style={{ height: 2, background: "#1e1e1e", borderRadius: 2, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(done/total)*100}%`, background: item.badgeColor, borderRadius: 2, transition: "width 0.35s ease" }} />
+        </div>
+      </div>
+      {isOpen && (
+        <div style={{ borderTop: `1px solid ${S.border}` }}>
+          {visReps.map((rep, ri) => {
+            const isDone = !!checked[rep.id]; const isAT = focusId === rep.id;
+            return (
+              <div key={rep.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 13px", borderBottom: ri < visReps.length-1 ? "1px solid #181818" : "none", background: isAT ? "#1c1700" : isDone ? "#0d0d0d" : "transparent" }}>
+                <div onClick={(e) => onToggle(e, rep.id)} style={{ cursor: "pointer", paddingTop: 1 }}><Checkbox isDone={isDone} /></div>
+                <div style={{ flex: 1, cursor: "pointer" }} onClick={(e) => onToggle(e, rep.id)}>
+                  <div style={{ fontSize: 12, color: isDone ? "#3a3a3a" : S.text, lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none" }}>{rep.action}</div>
+                  <div style={{ fontSize: 9, color: "#3a3a3a", marginTop: 3 }}>⏱ {rep.time}</div>
+                </div>
+                {!isDone && (
+                  <button onClick={(e) => { e.stopPropagation(); onFocus(rep); }} style={{
+                    background: isAT ? S.yellow : "transparent", border: `1px solid ${isAT ? S.yellow : "#2a2a2a"}`,
+                    color: isAT ? "#000" : "#444", borderRadius: 5, padding: "3px 7px", fontSize: 9, cursor: "pointer", transition: "all 0.15s",
+                  }}>{isAT ? "▶" : "⏱"}</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Custom tasks inline card per tab
+function CustomTasksCard({ tasks, tab, checked, onToggle, onDelete, focusId, onFocus }) {
+  const mine = tasks.filter(t => t.category === tab);
+  if (!mine.length) return null;
+  return (
+    <div style={{ margin: "0 14px 10px" }}>
+      <SectionLabel color={S.blue} text="✦ Your Additions" />
+      {mine.map(t => (
+        <RepRow key={t.id} rep={t} isDone={!!checked[t.id]}
+          onToggle={onToggle} onFocus={onFocus} focusId={focusId}
+          onDelete={() => onDelete(t.id)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ─── MAIN APP ──────────────────────────────────────────────────
+const TABS       = ["radar","week","active","creative","todo","life"];
+const TAB_LABELS = { radar:"📡 Radar", week:"⚡ Week", active:"🔥 Active", creative:"🎨 Creative", todo:"✅ To-Do", life:"🌱 Life" };
+
+function App() {
+  const [tab,           setTab]          = useState("radar");
+  const [checked,       setChecked]      = useState({});
+  const [open,          setOpen]         = useState({});
+  const [streakDates,   setStreakDates]  = useState([]);
+  const [customTasks,   setCustomTasks]  = useState([]);
+  const [deletedIds,    setDeletedIds]   = useState(new Set());
+  const [saveStatus,    setSaveStatus]   = useState("idle");
+  const [focusTask,     setFocusTask]    = useState(null);
+  const [focusRunning,  setFocusRunning] = useState(false);
+  const [focusTime,     setFocusTime]    = useState(25*60);
+  const [chatOpen,      setChatOpen]     = useState(false);
+  const [suggestions,   setSuggestions]  = useState([]);
+  const [briefingOpen,  setBriefingOpen] = useState(false);
+  const timerRef = useRef(null);
+
+  // Load all persisted state
+  useEffect(() => {
+    const d    = ls.get(STORAGE_KEY, {});
+    const sk   = ls.get(STREAK_KEY, { dates: [] });
+    const ct   = ls.get(CUSTOM_KEY, []);
+    const del  = ls.get(DELETED_KEY, []);
+    setChecked(d.checked || {});
+    setOpen(d.open || {});
+    setStreakDates(sk.dates || []);
+    setCustomTasks(ct);
+    setDeletedIds(new Set(del));
+
+    // Morning briefing: fetch suggestions file
+    fetch('./pulse-suggestions.json')
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(data => {
+        if (!data?.suggestions?.length) return;
+        const seen = ls.get(SEEN_SUG_KEY, []);
+        const fresh = data.suggestions.filter(s => !seen.includes(s.id));
+        if (fresh.length) {
+          setSuggestions(fresh);
+          setTimeout(() => setBriefingOpen(true), 800);
+        }
+      });
+  }, []);
+
+  // Timer
+  useEffect(() => {
+    if (focusRunning) {
+      timerRef.current = setInterval(() => {
+        setFocusTime(t => { if (t <= 1) { setFocusRunning(false); clearInterval(timerRef.current); return 25*60; } return t-1; });
+      }, 1000);
+    } else clearInterval(timerRef.current);
+    return () => clearInterval(timerRef.current);
+  }, [focusRunning]);
+
+  const persist = useCallback((c, o) => {
+    ls.set(STORAGE_KEY, { checked: c, open: o });
+    setSaveStatus("saved");
+    if (persist._t) clearTimeout(persist._t);
+    persist._t = setTimeout(() => setSaveStatus("idle"), 1400);
+  }, []);
+
+  const toggleRep = useCallback((e, id) => {
+    e?.stopPropagation();
+    const next = { ...checked, [id]: !checked[id] };
+    setChecked(next);
+    if (next[id]) {
+      const today = getTodayStr();
+      if (!streakDates.includes(today)) {
+        const nd = [...streakDates, today];
+        setStreakDates(nd);
+        ls.set(STREAK_KEY, { dates: nd });
+      }
+    }
+    persist(next, open);
+  }, [checked, open, streakDates, persist]);
+
+  const toggleCard = useCallback((id) => {
+    const next = { ...open, [id]: !open[id] };
+    setOpen(next); persist(checked, next);
+  }, [checked, open, persist]);
+
+  const handleFocus = useCallback((rep) => {
+    if (focusTask?.id === rep.id) { setFocusTask(null); setFocusRunning(false); setFocusTime(25*60); }
+    else { setFocusTask(rep); setFocusTime(25*60); setFocusRunning(true); }
+  }, [focusTask]);
+
+  const deleteCustom = useCallback((id) => {
+    const next = customTasks.filter(t => t.id !== id);
+    setCustomTasks(next); ls.set(CUSTOM_KEY, next);
+  }, [customTasks]);
+
+  const deleteBuiltin = useCallback((id) => {
+    const next = new Set([...deletedIds, id]);
+    setDeletedIds(next); ls.set(DELETED_KEY, [...next]);
+  }, [deletedIds]);
+
+  const acceptSuggestion = (s) => {
+    const newTask = { id: `sug-${s.id}`, action: s.action, time: s.time || "10 min · anywhere", category: s.category || "todo", created: getTodayStr() };
+    const next = [...customTasks, newTask];
+    setCustomTasks(next); ls.set(CUSTOM_KEY, next);
+    markSeen(s.id);
+  };
+
+  const markSeen = (id) => {
+    const seen = ls.get(SEEN_SUG_KEY, []);
+    ls.set(SEEN_SUG_KEY, [...seen, id]);
+  };
+
+  const dismissAll = () => {
+    suggestions.forEach(s => markSeen(s.id));
+    setBriefingOpen(false);
+  };
+
+  const streak    = calcStreak(streakDates);
+  const allReps   = [...BUILTIN_REPS, ...customTasks].filter(r => !deletedIds.has(r.id));
+  const weekDone  = WEEK_REPS.filter(r => !deletedIds.has(r.id) && checked[r.id]).length;
+  const totalDone = allReps.filter(r => checked[r.id]).length;
+  const pct       = allReps.length ? Math.round((totalDone / allReps.length) * 100) : 0;
+  const focusPadTop = focusTask ? "calc(58px + env(safe-area-inset-top))" : 0;
+
+  return (
+    <div style={{ background: S.bg, minHeight: "100vh", color: S.text, fontFamily: "system-ui, -apple-system, sans-serif", maxWidth: 500, margin: "0 auto", paddingBottom: "calc(90px + env(safe-area-inset-bottom))", paddingTop: focusPadTop }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&display=swap');
+      `}</style>
+
+      {/* Morning Briefing */}
+      {briefingOpen && suggestions.length > 0 && (
+        <MorningBriefing suggestions={suggestions} onAccept={acceptSuggestion} onDismissAll={dismissAll} />
+      )}
+
+      {/* Focus bar */}
+      {focusTask && (
+        <FocusBar task={focusTask} timeLeft={focusTime} running={focusRunning}
+          onToggle={() => setFocusRunning(r => !r)}
+          onStop={() => { setFocusTask(null); setFocusRunning(false); setFocusTime(25*60); }}
+        />
+      )}
+
+      {/* Header */}
+      <div style={{ padding: "22px 18px 14px", paddingTop: focusTask ? "22px" : "calc(22px + env(safe-area-inset-top))", borderBottom: `1px solid ${S.border}` }}>
+        <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 8, letterSpacing: "0.22em", color: S.muted, textTransform: "uppercase", marginBottom: 4 }}>Vlad / System OS</div>
+        <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 21, fontWeight: 900 }}>1-REP <span style={{ color: S.yellow }}>BACKLOG</span></div>
+        <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>One action. 5–15 min. Pick one and move.</div>
+      </div>
+
+      {/* Stats */}
+      <div style={{ display: "flex", borderBottom: `1px solid ${S.border}` }}>
+        {[
+          { v: `${weekDone}/${WEEK_REPS.filter(r => !deletedIds.has(r.id)).length}`, l: "Week",   c: S.yellow },
+          { v: totalDone,                                                             l: "Done",   c: S.green  },
+          { v: streak > 0 ? `🔥${streak}d` : "0d",                                  l: "Streak", c: S.orange },
+          { v: `${pct}%`,                                                             l: "Overall", c: S.blue  },
+        ].map((s, i) => (
+          <div key={i} style={{ flex: 1, padding: "9px 4px", textAlign: "center", borderRight: i < 3 ? `1px solid ${S.border}` : "none" }}>
+            <div style={{ fontFamily: "Unbounded, sans-serif", fontSize: 14, fontWeight: 700, color: s.c }}>{s.v}</div>
+            <div style={{ fontSize: 7, letterSpacing: "0.12em", textTransform: "uppercase", color: S.muted, marginTop: 2 }}>{s.l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Save toast */}
+      <div style={{ height: 20, display: "flex", alignItems: "center", padding: "0 16px" }}>
+        {saveStatus === "saved" && <span style={{ fontSize: 9, color: S.green }}>✓ saved</span>}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", borderBottom: `1px solid ${S.border}`, overflowX: "auto", padding: "0 6px" }}>
+        {TABS.map(t => (
+          <button key={t} className="tab-btn" onClick={() => setTab(t)} style={{
+            padding: "10px 8px", fontSize: 9, fontFamily: "Unbounded, sans-serif",
+            color: tab === t ? S.text : S.muted, background: "none", border: "none",
+            borderBottom: tab === t ? `2px solid ${S.yellow}` : "2px solid transparent",
+            cursor: "pointer", whiteSpace: "nowrap", transition: "color 0.15s",
+          }}>{TAB_LABELS[t]}</button>
+        ))}
+      </div>
+
+      {/* ── RADAR ── */}
+      {tab === "radar" && (
+        <RadarTab checked={checked} onToggle={toggleRep} streak={streak}
+          focusId={focusTask?.id} onFocus={handleFocus}
+          customTasks={customTasks} deletedIds={deletedIds}
+          onDeleteCustom={deleteCustom}
+        />
+      )}
+
+      {/* ── WEEK ── */}
+      {tab === "week" && (
+        <div style={{ padding: "14px 14px 0" }}>
+          <SectionLabel color={S.muted} text={`📅 Calendar · ${THIS_WEEK.weekOf}`} />
+          {THIS_WEEK.calendar.map(ev => (
+            <div key={ev.id} onClick={(e) => toggleRep(e, ev.id)} className="rep-row" style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "9px 12px", marginBottom: 6,
+              background: checked[ev.id] ? "#0a0a0a" : S.surface,
+              border: `1px solid ${checked[ev.id] ? "#181818" : S.border}`,
+              borderRadius: 9, cursor: "pointer", opacity: checked[ev.id] ? 0.45 : 1, transition: "all 0.15s",
+            }}>
+              <Checkbox isDone={!!checked[ev.id]} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, color: checked[ev.id] ? "#3a3a3a" : S.text, textDecoration: checked[ev.id] ? "line-through" : "none" }}>{ev.event}</div>
+                <div style={{ fontSize: 9, color: S.muted, marginTop: 1 }}>{ev.day} · {ev.time}</div>
+              </div>
+            </div>
+          ))}
+          <SectionLabel color={S.red}    text="🔴 Urgent" />
+          {THIS_WEEK.urgent.filter(r => !deletedIds.has(r.id)).map(r =>
+            <RepRow key={r.id} rep={r} isDone={!!checked[r.id]} onToggle={toggleRep} onFocus={handleFocus} focusId={focusTask?.id} />)}
+          <SectionLabel color={S.yellow} text="🟡 This Week" />
+          {THIS_WEEK.thisweek.filter(r => !deletedIds.has(r.id)).map(r =>
+            <RepRow key={r.id} rep={r} isDone={!!checked[r.id]} onToggle={toggleRep} onFocus={handleFocus} focusId={focusTask?.id} />)}
+          <CustomTasksCard tasks={customTasks} tab="week" checked={checked} onToggle={toggleRep} onDelete={deleteCustom} focusId={focusTask?.id} onFocus={handleFocus} />
+        </div>
+      )}
+
+      {/* ── BACKLOG TABS ── */}
+      {["active","creative","todo","life"].includes(tab) && (
+        <div style={{ padding: "14px 0 0" }}>
+          {BACKLOG[tab].items.map(item => (
+            <BacklogCard key={item.id} item={item} checked={checked} open={open}
+              onToggle={toggleRep} onCard={toggleCard}
+              focusId={focusTask?.id} onFocus={handleFocus}
+              deletedIds={deletedIds}
+            />
+          ))}
+          <CustomTasksCard tasks={customTasks} tab={tab} checked={checked} onToggle={toggleRep} onDelete={deleteCustom} focusId={focusTask?.id} onFocus={handleFocus} />
+        </div>
+      )}
+
+      {/* ── FLOATING BUTTONS ── */}
+      {/* Chat button */}
+      <div className="chat-btn" onClick={() => setChatOpen(true)} style={{
+        position: "fixed", bottom: "calc(18px + env(safe-area-inset-bottom))", left: 14,
+        width: 46, height: 46, borderRadius: 23,
+        background: S.surface, border: `1px solid ${S.border}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer", fontSize: 20, transition: "transform 0.1s",
+        boxShadow: "0 4px 18px rgba(0,0,0,0.4)",
+      }}>💬</div>
+
+      {/* Reset FAB */}
+      <div className="fab" onClick={() => { setChecked({}); persist({}, open); }} style={{
+        position: "fixed", bottom: "calc(18px + env(safe-area-inset-bottom))", right: 14,
+        background: S.yellow, color: "#000", borderRadius: 50,
+        padding: "9px 16px", fontFamily: "Unbounded, sans-serif", fontSize: 8, fontWeight: 700,
+        letterSpacing: "0.06em", cursor: "pointer", boxShadow: "0 4px 18px rgba(255,214,0,0.18)",
+        userSelect: "none", transition: "transform 0.1s",
+      }}>↺ RESET</div>
+
+      {/* Chat drawer */}
+      <ChatDrawer
+        open={chatOpen} onClose={() => setChatOpen(false)}
+        customTasks={customTasks} setCustomTasks={setCustomTasks}
+        deletedIds={deletedIds} setDeletedIds={setDeletedIds}
+        checked={checked}
+      />
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+</script>
+</body>
+</html>
