@@ -1,8 +1,10 @@
-// Pulse Service Worker — offline-first cache
-const CACHE = 'pulse-v1';
+// Pulse Service Worker — network-first for HTML so updates propagate; cache-first for static assets.
+// Bumping CACHE name triggers activate cleanup of old caches.
+const CACHE = 'pulse-v3';
 
 const PRECACHE = [
   './pulse.html',
+  './index.html',
   './manifest.json',
   './icon-512.png',
   './icon-192.png',
@@ -12,7 +14,7 @@ const PRECACHE = [
   'https://fonts.googleapis.com/css2?family=Unbounded:wght@700;900&display=swap',
 ];
 
-// Install: pre-cache all shell assets
+// Install: pre-cache shell assets
 self.addEventListener('install', e => {
   e.waitUntil(
     caches.open(CACHE).then(cache =>
@@ -21,7 +23,7 @@ self.addEventListener('install', e => {
   );
 });
 
-// Activate: clean up old caches
+// Activate: drop any older caches so stale HTML can't be served
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys().then(keys =>
@@ -30,20 +32,43 @@ self.addEventListener('activate', e => {
   );
 });
 
-// Fetch: cache-first for app shell, network-first for everything else
+// Fetch:
+//   - HTML / JSON / sw.js: network-first, fall back to cache when offline
+//   - everything else (icons, fonts, react CDN): cache-first
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
+
+  const url = e.request.url;
+  const dest = e.request.destination;
+  const isHTML = dest === 'document' || url.endsWith('.html');
+  const isJSON = url.endsWith('.json') || url.includes('/raw/');
+  const isSW   = url.endsWith('/sw.js');
+
+  if (isHTML || isJSON || isSW) {
+    // Network-first
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        if (resp.ok && isHTML) {
+          const clone = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return resp;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // Cache-first for everything else (fonts, icons, react CDN)
   e.respondWith(
     caches.match(e.request).then(cached => {
       if (cached) return cached;
-      return fetch(e.request).then(response => {
-        // Cache CDN assets for future offline use
-        if (response.ok && (e.request.url.includes('unpkg.com') || e.request.url.includes('fonts.g'))) {
-          const clone = response.clone();
+      return fetch(e.request).then(resp => {
+        if (resp.ok && (url.includes('unpkg.com') || url.includes('fonts.g'))) {
+          const clone = resp.clone();
           caches.open(CACHE).then(c => c.put(e.request, clone));
         }
-        return response;
-      }).catch(() => cached); // fallback to cache if network fails
+        return resp;
+      });
     })
   );
 });
