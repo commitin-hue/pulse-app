@@ -74,25 +74,23 @@ const SEEN_SUG_KEY = "vlad-seen-suggestions";
 
 // ─── DATA ──────────────────────────────────────────────────────
 const THIS_WEEK = {
-  weekOf: "Apr 15–21",
+  weekOf: "May 5–11",
   calendar: [
-    { day: "Wed Apr 15", event: "🎙️ Honda HR Interview",    time: "11:30am", id: "cal1" },
-    { day: "Thu Apr 16", event: "🏋️ Personal Training",     time: "6:00pm",  id: "cal2" },
-    { day: "Thu Apr 16", event: "📋 Weekly Backlog Hour",   time: "9:00pm",  id: "cal3" },
-    { day: "Sat Apr 18", event: "🎉 Fever (Anju's event)",  time: "11:00pm", id: "cal4" },
-    { day: "Wed Apr 22", event: "🏥 Doctor's Appointment",  time: "11:30am", id: "cal5" },
+    { day: "Thu May 7",  event: "💆 Chiro appointment",        time: "7:30pm", id: "cal1" },
+    { day: "Thu May 7",  event: "📋 Weekly Backlog Hour",      time: "9:00pm", id: "cal2" },
+    { day: "Sun May 10", event: "🍝 Lasagna party at home",    time: "3:00pm", id: "cal3" },
   ],
   urgent: [
-    { id: "tw1", action: "Send portfolio draft tonight (Gmail draft is ready)",   time: "10 min · tonight" },
-    { id: "tw2", action: "Book scuba session #4 — one session from certified",    time: "5 min · anywhere" },
-    { id: "tw3", action: "Confirm Bali hotel at The Prime Canggu",                time: "5 min · anywhere" },
-    { id: "tw4", action: "Check Bali eVOA requirements for Japan residents",      time: "5 min · commute"  },
+    { id: "tw1", action: "Apply to Logitech Marketing Communication Manager role", time: "15 min · evening" },
+    { id: "tw2", action: "Book scuba session #4 — one session from certified",     time: "5 min · anywhere" },
+    { id: "tw3", action: "Decide on Harvard AI Cohort Showcase (May 14)",          time: "5 min · anywhere" },
   ],
   thisweek: [
-    { id: "tw5", action: "Apply to Rakuten UIUX or Logitech role (both in inbox)", time: "15 min · evening" },
-    { id: "tw6", action: "Call house maker or Panasonic toilet (daytime)",          time: "10 min · daytime" },
+    { id: "tw5", action: "Follow up with Indegene on UX role application",          time: "5 min · commute"  },
+    { id: "tw6", action: "Follow up with Sanofi on UX design inquiry",              time: "5 min · commute"  },
     { id: "tw7", action: "Loans — fill in one section of paperwork",                time: "15 min · evening" },
     { id: "tw8", action: "Message one recruiter on LinkedIn",                       time: "5 min · commute"  },
+    { id: "tw9", action: "Plan menu and Costco run for Sunday's lasagna party",     time: "10 min · evening" },
   ],
 };
 
@@ -100,11 +98,11 @@ const BACKLOG = {
   active: {
     label: "🔥 Active",
     items: [
-      { id: "job-search", emoji: "💼", name: "Job Search", meta: "Resume done · recruiter outreach active", badgeColor: "#00E676", reps: [
-        { id: "js1", action: "Send portfolio to one target company",                 time: "10 min · tonight" },
-        { id: "js2", action: "Message one recruiter on LinkedIn",                    time: "5 min · commute"  },
-        { id: "js3", action: "Update one section of Google profile",                 time: "10 min · commute" },
-        { id: "js4", action: "Apply to Rakuten UIUX or Logitech role",               time: "15 min · evening" },
+      { id: "job-search", emoji: "💼", name: "Job Search", meta: "Indegene & Sanofi active · recruiter outreach ongoing", badgeColor: "#00E676", reps: [
+        { id: "js1", action: "Follow up with Indegene on UX role application",       time: "5 min · commute"  },
+        { id: "js2", action: "Follow up with Sanofi on UX design inquiry",           time: "5 min · commute"  },
+        { id: "js3", action: "Message one recruiter on LinkedIn",                    time: "5 min · commute"  },
+        { id: "js4", action: "Send portfolio to one new target company",             time: "10 min · tonight" },
         { id: "js5", action: "Add one measurable result to LinkedIn headline",       time: "5 min · anywhere" },
       ]},
       { id: "house", emoji: "🏠", name: "House Acquisition", meta: "Own 60% · acquiring remaining 40%", badgeColor: "#00E676", reps: [
@@ -190,9 +188,9 @@ const BACKLOG = {
         { id: "co2", action: "Worcestershire, Fish sauce, Rice wine vinegar, Tomato paste", time: "At Costco" },
         { id: "co3", action: "Cama oil, Cayenne pepper, Tortilla chips, Dog food",          time: "At Costco" },
       ]},
-      { id: "bali", emoji: "🌴", name: "Bali Trip Prep", meta: "The Prime Canggu · late April", badgeColor: "#FFD600", reps: [
-        { id: "ba1", action: "Confirm hotel reservation at The Prime Canggu",       time: "5 min · anywhere" },
-        { id: "ba2", action: "Check Bali eVOA requirements for Japan residents",    time: "5 min · commute"  },
+      { id: "bali", emoji: "🌴", name: "Bali Trip Prep", meta: "The Prime Canggu · Apr 28 · 4 days away", badgeColor: "#FF3D3D", reps: [
+        { id: "ba1", action: "Sort eVOA — apply online before you fly",             time: "10 min · tonight" },
+        { id: "ba2", action: "Book airport transfer to/from Canggu",                time: "5 min · anywhere" },
         { id: "ba3", action: "Pack one category: toiletries / clothes / chargers",  time: "15 min · at home" },
       ]},
     ],
@@ -449,17 +447,19 @@ function ChatDrawer({ open, onClose, customTasks, setCustomTasks, deletedIds, se
   const [input,      setInput]      = useState('');
   const [history,    setHistory]    = useState([]);
   const [bottomOff,  setBottomOff]  = useState(0);
+  const [viewportH,  setViewportH]  = useState(window.innerHeight);
   const inputRef  = useRef(null);
   const histRef   = useRef(null);
 
   // Lift drawer above iOS keyboard using visualViewport API
   useEffect(() => {
-    if (!open) { setBottomOff(0); return; }
+    if (!open) { setBottomOff(0); setViewportH(window.innerHeight); return; }
     const vv = window.visualViewport;
     if (!vv) return;
     const update = () => {
       const kbH = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       setBottomOff(kbH);
+      setViewportH(vv.height);
     };
     vv.addEventListener('resize', update);
     vv.addEventListener('scroll', update);
@@ -540,12 +540,12 @@ function ChatDrawer({ open, onClose, customTasks, setCustomTasks, deletedIds, se
         left: "50%", transform: "translateX(-50%)",
         width: "100%", maxWidth: 500,
         background: "#161616",
-        borderRadius: "20px 20px 0 0",
+        borderRadius: bottomOff > 0 ? "16px 16px 0 0" : "20px 20px 0 0",
         zIndex: 310,
         paddingBottom: bottomOff > 0 ? 6 : "env(safe-area-inset-bottom)",
-        maxHeight: "60vh",
+        maxHeight: bottomOff > 0 ? `${viewportH - 8}px` : "62vh",
         display: "flex", flexDirection: "column",
-        transition: "bottom 0.15s ease-out",
+        transition: "bottom 0.15s ease-out, max-height 0.15s ease-out",
         boxShadow: "0 -8px 40px rgba(0,0,0,0.6)",
       }}>
         {/* Handle */}
@@ -608,12 +608,11 @@ function ChatDrawer({ open, onClose, customTasks, setCustomTasks, deletedIds, se
               border: `1.5px solid #383838`,
               borderRadius: 12,
               padding: "13px 14px",
-              fontSize: 15,
+              fontSize: 16,
               color: "#F0EDE8",
               outline: "none",
               minWidth: 0,
-              // Prevent iOS zoom on focus (font-size must be ≥16px to avoid it,
-              // but we compensate with transform so visual size stays 15px)
+              // fontSize ≥16px prevents iOS Safari from auto-zooming on focus
               WebkitAppearance: "none",
             }}
           />
@@ -835,7 +834,39 @@ function App() {
   const [chatOpen,      setChatOpen]     = useState(false);
   const [suggestions,   setSuggestions]  = useState([]);
   const [briefingOpen,  setBriefingOpen] = useState(false);
+  const [weekData,      setWeekData]     = useState({ weekOf: THIS_WEEK.weekOf, calendar: THIS_WEEK.calendar });
   const timerRef = useRef(null);
+
+  // Fetch latest suggestions from Gist. Pass forceAll=true to show all (not just unseen).
+  const fetchBriefing = useCallback((forceAll) => {
+    if (forceAll) ls.set(SEEN_SUG_KEY, []);
+    fetch('https://gist.githubusercontent.com/commitin-hue/a44d5b59aac3756ce47fe39359ba179f/raw/pulse-suggestions.json?t=' + Date.now())
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(data => {
+        if (!data?.suggestions?.length) return;
+        const seen = ls.get(SEEN_SUG_KEY, []);
+        const fresh = data.suggestions.filter(s => !seen.includes(s.id));
+        if (fresh.length) {
+          setSuggestions(fresh);
+          setBriefingOpen(true);
+        }
+      });
+  }, []);
+
+  // Fetch latest calendar/weekOf from Gist. Falls back to hardcoded THIS_WEEK on failure.
+  const fetchWeek = useCallback(() => {
+    fetch('https://gist.githubusercontent.com/commitin-hue/a44d5b59aac3756ce47fe39359ba179f/raw/pulse-week.json?t=' + Date.now())
+      .then(r => r.ok ? r.json() : null)
+      .catch(() => null)
+      .then(data => {
+        if (!data) return;
+        setWeekData({
+          weekOf:   data.weekOf   || THIS_WEEK.weekOf,
+          calendar: Array.isArray(data.calendar) ? data.calendar : THIS_WEEK.calendar,
+        });
+      });
+  }, []);
 
   // Load all persisted state
   useEffect(() => {
@@ -849,19 +880,10 @@ function App() {
     setCustomTasks(ct);
     setDeletedIds(new Set(del));
 
-    // Morning briefing: fetch suggestions file
-    fetch('./pulse-suggestions.json')
-      .then(r => r.ok ? r.json() : null)
-      .catch(() => null)
-      .then(data => {
-        if (!data?.suggestions?.length) return;
-        const seen = ls.get(SEEN_SUG_KEY, []);
-        const fresh = data.suggestions.filter(s => !seen.includes(s.id));
-        if (fresh.length) {
-          setSuggestions(fresh);
-          setTimeout(() => setBriefingOpen(true), 800);
-        }
-      });
+    // Morning briefing: fetch suggestions from GitHub Gist (always latest)
+    fetchBriefing(false);
+    // Week tab: fetch calendar/weekOf from same gist
+    fetchWeek();
   }, []);
 
   // Timer
@@ -1010,8 +1032,8 @@ function App() {
       {/* ── WEEK ── */}
       {tab === "week" && (
         <div style={{ padding: "14px 14px 0" }}>
-          <SectionLabel color={S.muted} text={`📅 Calendar · ${THIS_WEEK.weekOf}`} />
-          {THIS_WEEK.calendar.map(ev => (
+          <SectionLabel color={S.muted} text={`📅 Calendar · ${weekData.weekOf}`} />
+          {weekData.calendar.map(ev => (
             <div key={ev.id} onClick={(e) => toggleRep(e, ev.id)} className="rep-row" style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "9px 12px", marginBottom: 6,
@@ -1061,14 +1083,14 @@ function App() {
         boxShadow: "0 4px 18px rgba(0,0,0,0.4)",
       }}>💬</div>
 
-      {/* Reset FAB */}
-      <div className="fab" onClick={() => { setChecked({}); persist({}, open); }} style={{
+      {/* Refresh FAB — re-fetches latest Gist suggestions */}
+      <div className="fab" onClick={() => fetchBriefing(true)} style={{
         position: "fixed", bottom: "calc(18px + env(safe-area-inset-bottom))", right: 14,
         background: S.yellow, color: "#000", borderRadius: 50,
         padding: "9px 16px", fontFamily: "Unbounded, sans-serif", fontSize: 8, fontWeight: 700,
         letterSpacing: "0.06em", cursor: "pointer", boxShadow: "0 4px 18px rgba(255,214,0,0.18)",
         userSelect: "none", transition: "transform 0.1s",
-      }}>↺ RESET</div>
+      }}>↺ REFRESH</div>
 
       {/* Chat drawer */}
       <ChatDrawer
